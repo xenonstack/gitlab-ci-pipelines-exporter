@@ -96,8 +96,9 @@ func (c *Client) listProjects(w *Wildcard) ([]Project, error) {
 			projects = append(
 				projects,
 				Project{
-					Name: gp.PathWithNamespace,
-					Refs: w.Refs,
+					Group: gp.Namespace.Name,
+					Name:  gp.PathWithNamespace,
+					Refs:  w.Refs,
 				},
 			)
 		}
@@ -290,7 +291,7 @@ func (c *Client) pollProjectRef(gp *gitlab.Project, ref string) {
 	topics := strings.Join(gp.TagList[:], ",")
 	var lastPipeline *gitlab.Pipeline
 
-	runCount.WithLabelValues(gp.PathWithNamespace, topics, ref).Add(0)
+	runCount.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Add(0)
 
 	b := &backoff.Backoff{
 		Min:    time.Duration(cfg.PipelinesPollingIntervalSeconds) * time.Second,
@@ -314,7 +315,7 @@ func (c *Client) pollProjectRef(gp *gitlab.Project, ref string) {
 			log.Debugf("Could not find any pipeline for %s:%s", gp.PathWithNamespace, ref)
 		} else if lastPipeline == nil || lastPipeline.ID != pipelines[0].ID || lastPipeline.Status != pipelines[0].Status {
 			if lastPipeline != nil {
-				runCount.WithLabelValues(gp.PathWithNamespace, topics, ref).Inc()
+				runCount.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Inc()
 			}
 
 			c.rateLimit()
@@ -326,29 +327,29 @@ func (c *Client) pollProjectRef(gp *gitlab.Project, ref string) {
 			if lastPipeline != nil {
 				if lastPipeline.Coverage != "" {
 					if parsedCoverage, err := strconv.ParseFloat(lastPipeline.Coverage, 64); err == nil {
-						coverage.WithLabelValues(gp.PathWithNamespace, topics, ref).Set(parsedCoverage)
+						coverage.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Set(parsedCoverage)
 					} else {
 						log.Warnf("Could not parse coverage string returned from GitLab API: '%s' - '%s'", lastPipeline.Coverage, err.Error())
 					}
 				}
 
-				lastRunDuration.WithLabelValues(gp.PathWithNamespace, topics, ref).Set(float64(lastPipeline.Duration))
-				lastRunID.WithLabelValues(gp.PathWithNamespace, topics, ref).Set(float64(lastPipeline.ID))
+				lastRunDuration.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Set(float64(lastPipeline.Duration))
+				lastRunID.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Set(float64(lastPipeline.ID))
 
 				// List of available statuses from the API spec
 				// ref: https://docs.gitlab.com/ee/api/pipelines.html#list-project-pipelines
 				for _, s := range []string{"running", "pending", "success", "failed", "canceled", "skipped"} {
 					if s == lastPipeline.Status {
-						lastRunStatus.WithLabelValues(gp.PathWithNamespace, topics, ref, s).Set(1)
+						lastRunStatus.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref, s).Set(1)
 					} else {
-						lastRunStatus.WithLabelValues(gp.PathWithNamespace, topics, ref, s).Set(0)
+						lastRunStatus.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref, s).Set(0)
 					}
 				}
 			}
 		}
 
 		if lastPipeline != nil {
-			timeSinceLastRun.WithLabelValues(gp.PathWithNamespace, topics, ref).Set(float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
+			timeSinceLastRun.WithLabelValues(gp.Namespace.Name, gp.Name, topics, ref).Set(float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
 			b.Reset()
 		}
 
@@ -378,6 +379,7 @@ func (c *Client) pollProjectRefsFromPipelines(projectID, limit int) ([]string, e
 
 	refs := []string{}
 	c.rateLimit()
+	log.Println(projectID, "==-=-=-=-=")
 	pipelines, _, err := c.Pipelines.ListProjectPipelines(projectID, options)
 	if err != nil {
 		return refs, err

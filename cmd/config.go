@@ -31,8 +31,9 @@ type Config struct {
 
 // Project holds information about a GitLab project
 type Project struct {
-	Name string
-	Refs string
+	Group string
+	Name  string
+	Refs  string
 }
 
 // Wildcard is a specific handler to dynamically search projects
